@@ -1,0 +1,19 @@
+/* ── GCS Dashboard Grid ─────────────────────────────────────── */
+
+#main-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr 300px;
+  gap: var(--gap-md);
+}
+
+#graphs-section {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--gap-md);
+}
+
+#viz-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--gap-md);
+}

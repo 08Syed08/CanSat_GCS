@@ -1,0 +1,15 @@
+/* ── GCS Animations ─────────────────────────────────────────── */
+
+@keyframes err-pulse {
+  from { box-shadow: 0 0 5px rgba(255,30,30,0.3); }
+  to   { box-shadow: 0 0 16px rgba(255,30,30,0.7); }
+}
+
+@keyframes scanline {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.pulsing {
+  animation: err-pulse 1s infinite alternate;
+}

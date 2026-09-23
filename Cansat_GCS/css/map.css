@@ -1,0 +1,18 @@
+/* ── GCS Map ────────────────────────────────────────────────── */
+
+#tracking-map {
+  flex: 1;
+  min-height: 200px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+}
+
+#map-footer {
+  display: flex;
+  justify-content: space-around;
+  padding: var(--gap-sm);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  background: rgba(0,0,0,0.2);
+  border-top: 1px solid var(--border-dim);
+}

@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CanSat GCS | India Space Lab — Ground Control Software</title>
+
+  <!-- Google Fonts: Orbitron (display), Share Tech Mono (data), Rajdhani (UI) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;900&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet.js CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+
+  <!-- GCS Stylesheet -->
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  CONFIRMATION MODAL (critical command gate)                     -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div id="modal-overlay" class="hidden" role="dialog" aria-modal="true">
+  <div id="modal-box">
+    <div class="modal-header">
+      <span id="modal-icon">⚠</span>
+      <h3 id="modal-title">CONFIRM COMMAND</h3>
+    </div>
+    <p id="modal-message">Execute critical command?</p>
+    <div id="modal-sub" class="modal-sub hidden"></div>
+    <div class="modal-actions">
+      <button id="modal-confirm" class="btn-modal-confirm">CONFIRM EXECUTE</button>
+      <button id="modal-cancel" class="btn-modal-cancel">ABORT</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  MAIN APPLICATION CONTAINER                                     -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div id="gcs-app">
+
+  <!-- ┌─────────────────────────────────────────────────────────────┐ -->
+  <!-- │  1. HEADER                                                  │ -->
+  <!-- └─────────────────────────────────────────────────────────────┘ -->
+  <header id="gcs-header">
+    <div id="header-left">
+      <div id="mission-badge">
+        <span class="badge-icon">◉</span>
+        <div class="badge-text">
+          <span class="badge-org">INDIA SPACE LAB</span>
+          <span class="badge-mission">CANSAT GCS v1.0</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="header-center">
+      <div class="hdr-status-group">
+        <div class="hdr-stat">
+          <label>MISSION STATUS</label>
+          <span id="mission-status" class="status-text status-offline">OFFLINE</span>
+        </div>
+        <div class="hdr-stat">
+          <label>MISSION STATE</label>
+          <span id="mission-state" class="state-badge">PRE_LAUNCH</span>
+        </div>
+        <div class="hdr-stat">
+          <label>PACKETS RECEIVED</label>
+          <span id="header-packet-count" class="mono-val">0</span>
+        </div>
+        <div class="hdr-stat">
+          <label>LINK</label>
+          <span id="header-link-indicator" class="link-dot offline"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="header-right">
+      <div class="hdr-clock-group">
+        <div class="hdr-clock">
+          <label>MISSION TIME</label>
+          <span id="hdr-mission-time" class="clock-display">00:00:00</span>
+        </div>
+        <div class="hdr-clock">
+          <label>PC TIME (UTC)</label>
+          <span id="hdr-pc-time" class="clock-display">--:--:--</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ┌─────────────────────────────────────────────────────────────┐ -->
+  <!-- │  2. TOP CONTROL BAR                                         │ -->
+  <!-- └─────────────────────────────────────────────────────────────┘ -->
+  <div id="control-bar">
+    <!-- Telemetry Control -->
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">TELEMETRY</span>
+      <button id="btn-start" class="btn-ctrl btn-go" title="Start telemetry reception">
+        ▶ START
+      </button>
+      <button id="btn-stop" class="btn-ctrl btn-halt" title="Stop telemetry reception" disabled>
+        ■ STOP
+      </button>
+    </div>
+
+    <!-- Serial / WebSocket -->
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">CONNECTION</span>
+      <button id="btn-connect-serial" class="btn-ctrl btn-link" title="Connect via Web Serial API">
+        ⚡ SERIAL
+      </button>
+      <button id="btn-connect-ws" class="btn-ctrl btn-link" title="Connect to Python WebSocket simulator">
+        ⇄ WS SIM
+      </button>
+      <span id="serial-status-badge" class="status-badge offline">OFFLINE</span>
+    </div>
+
+    <!-- Export -->
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">EXPORT</span>
+      <button id="btn-export-csv" class="btn-ctrl btn-data" title="Export telemetry CSV">
+        ⬇ CSV
+      </button>
+      <button id="btn-export-graph" class="btn-ctrl btn-data" title="Export charts as PNG">
+        ⬇ GRAPHS
+      </button>
+    </div>
+
+    <!-- Utilities -->
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">UTILITIES</span>
+      <button id="btn-sync-time" class="btn-ctrl btn-util" title="Sync PC time display">
+        ⟳ SYNC TIME
+      </button>
+      <button id="btn-reset-packet" class="btn-ctrl btn-util" title="Reset packet buffer and charts">
+        ⊘ RESET
+      </button>
+    </div>
+
+    <!-- Live Telemetry Indicators -->
+    <div class="ctrl-group ctrl-indicators">
+      <span class="ctrl-group-label">LIVE</span>
+      <div class="indicator-row">
+        <div class="indicator-item">
+          <span id="ind-pkt-rate" class="ind-val">0.0</span>
+          <span class="ind-unit">pkt/s</span>
+        </div>
+        <div class="indicator-item">
+          <span id="ind-total-pkts" class="ind-val">0</span>
+          <span class="ind-unit">total</span>
+        </div>
+        <div class="indicator-item">
+          <span id="ind-mode" class="ind-val mode-sim">SIM</span>
+          <span class="ind-unit">mode</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ┌─────────────────────────────────────────────────────────────┐ -->
+  <!-- │  3. MAIN GRID  [Mission Control | Telemetry | Fault Monitor]│ -->
+  <!-- └─────────────────────────────────────────────────────────────┘ -->
+  <div id="main-grid">
+
+    <!-- ── Mission Control Panel ── -->
+    <section class="gcs-panel" id="mission-control-panel">
+      <div class="panel-header">
+        <span class="panel-title">MISSION CONTROL</span>
+        <span class="panel-tag">MCP-01</span>
+      </div>
+
+      <!-- Command Buttons -->
+      <div id="cmd-buttons">
+        <button id="btn-manual-sep" class="btn-mission warning" title="Initiate manual separation sequence">
+          <span class="btn-icon">✦</span>
+          <span class="btn-label">MANUAL SEPARATION</span>
+          <span class="btn-sub">STAGE RELEASE</span>
+        </button>
+        <button id="btn-parachute" class="btn-mission critical" title="Emergency parachute deployment">
+          <span class="btn-icon">⚠</span>
+          <span class="btn-label">EMERGENCY PARACHUTE</span>
+          <span class="btn-sub">IMMEDIATE DEPLOY</span>
+        </button>
+        <button id="btn-redundant" class="btn-mission critical" title="Redundant system activation">
+          <span class="btn-icon">⚡</span>
+          <span class="btn-label">REDUNDANT ACTIVATE</span>
+          <span class="btn-sub">BACKUP SYSTEM</span>
+        </button>
+      </div>
+
+      <!-- Command Execution Status -->
+      <div id="cmd-status-box">
+        <div class="cmd-stat-row">
+          <label>LAST CMD</label><span id="cmd-last" class="mono-val">--</span>
+        </div>
+        <div class="cmd-stat-row">
+          <label>STATUS</label>
+          <span id="cmd-exec-status" class="cmd-status-badge idle">IDLE</span>
+        </div>
+        <div class="cmd-stat-row">
+          <label>TIMESTAMP</label><span id="cmd-timestamp" class="mono-val">--:--:--</span>
+        </div>
+        <div class="cmd-stat-row">
+          <label>ACK</label><span id="cmd-ack" class="mono-val ack-pending">AWAITING</span>
+        </div>
+      </div>
+
+      <!-- Command History -->
+      <div id="cmd-history-section">
+        <div class="section-label">COMMAND LOG</div>
+        <div id="cmd-history-list"></div>
+      </div>
+    </section>
+
+    <!-- ── Telemetry Display ── -->
+    <section class="gcs-panel" id="telemetry-panel">
+      <div class="panel-header">
+        <span class="panel-title">TELEMETRY STREAM</span>
+        <span class="panel-tag">PKT #<span id="tel-packet-no">0000</span></span>
+      </div>
+
+      <div id="telemetry-grid">
+        <!-- Container Module -->
+        <div id="container-telemetry" class="tel-module">
+          <div class="tel-module-header">
+            <span>CONTAINER MODULE</span>
+            <span class="tel-module-id">C-TEL</span>
+          </div>
+          <div class="tel-fields">
+            <div class="tel-row">
+              <label>MISSION TIME</label>
+              <span id="tel-time" class="tel-value">--:--:--</span>
+            </div>
+            <div class="tel-row">
+              <label>MODE</label>
+              <span id="tel-mode" class="tel-value">--</span>
+            </div>
+            <div class="tel-row">
+              <label>STATE</label>
+              <span id="tel-state" class="tel-value state-val">OFFLINE</span>
+            </div>
+            <div class="tel-row highlight">
+              <label>ALTITUDE</label>
+              <span id="tel-altitude" class="tel-value tel-primary">-- m</span>
+            </div>
+            <div class="tel-row">
+              <label>TEMPERATURE</label>
+              <span id="tel-temperature" class="tel-value">-- °C</span>
+            </div>
+            <div class="tel-row">
+              <label>PRESSURE</label>
+              <span id="tel-pressure" class="tel-value">-- kPa</span>
+            </div>
+            <div class="tel-row warn-check">
+              <label>VOLTAGE</label>
+              <span id="tel-voltage" class="tel-value">-- V</span>
+            </div>
+            <div class="tel-row warn-check">
+              <label>DESCENT RATE</label>
+              <span id="tel-descent" class="tel-value">-- m/s</span>
+            </div>
+          </div>
+
+          <div class="tel-module-header sub">
+            <span>GPS NAVIGATION</span>
+            <span class="tel-module-id">GPS</span>
+          </div>
+          <div class="tel-fields">
+            <div class="tel-row">
+              <label>LATITUDE</label>
+              <span id="tel-gps-lat" class="tel-value mono-val">-- °N</span>
+            </div>
+            <div class="tel-row">
+              <label>LONGITUDE</label>
+              <span id="tel-gps-lon" class="tel-value mono-val">-- °E</span>
+            </div>
+            <div class="tel-row">
+              <label>GPS ALTITUDE</label>
+              <span id="tel-gps-alt" class="tel-value">-- m</span>
+            </div>
+            <div class="tel-row">
+              <label>SATELLITES</label>
+              <span id="tel-gps-sats" class="tel-value">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Payload Module -->
+        <div id="payload-telemetry" class="tel-module">
+          <div class="tel-module-header accent-blue">
+            <span>PAYLOAD MODULE</span>
+            <span class="tel-module-id">P-TEL</span>
+          </div>
+          <div class="tel-fields">
+            <div class="tel-row highlight">
+              <label>ALTITUDE</label>
+              <span id="pay-altitude" class="tel-value tel-primary">-- m</span>
+            </div>
+            <div class="tel-row">
+              <label>TEMPERATURE</label>
+              <span id="pay-temperature" class="tel-value">-- °C</span>
+            </div>
+            <div class="tel-row">
+              <label>PRESSURE</label>
+              <span id="pay-pressure" class="tel-value">-- kPa</span>
+            </div>
+            <div class="tel-row warn-check">
+              <label>VOLTAGE</label>
+              <span id="pay-voltage" class="tel-value">-- V</span>
+            </div>
+          </div>
+
+          <div class="tel-module-header sub accent-blue">
+            <span>IMU ORIENTATION</span>
+            <span class="tel-module-id">IMU</span>
+          </div>
+          <div class="tel-fields">
+            <div class="tel-row">
+              <label>ROLL</label>
+              <span id="tel-roll" class="tel-value">-- °</span>
+            </div>
+            <div class="tel-row">
+              <label>PITCH</label>
+              <span id="tel-pitch" class="tel-value">-- °</span>
+            </div>
+            <div class="tel-row">
+              <label>YAW</label>
+              <span id="tel-yaw" class="tel-value">-- °</span>
+            </div>
+          </div>
+
+          <div class="tel-module-header sub accent-blue">
+            <span>DATA LINK</span>
+            <span class="tel-module-id">DL</span>
+          </div>
+          <div class="tel-fields">
+            <div class="tel-row">
+              <label>PACKET COUNT</label>
+              <span id="tel-pkt-count" class="tel-value mono-val">0</span>
+            </div>
+            <div class="tel-row">
+              <label>DATA RATE</label>
+              <span id="tel-data-rate" class="tel-value">-- pkt/s</span>
+            </div>
+            <div class="tel-row">
+              <label>TEAM ID</label>
+              <span id="tel-team-id" class="tel-value">--</span>
+            </div>
+          </div>
+
+          <div class="tel-module-header sub accent-blue">
+            <span>RAW PACKET</span>
+          </div>
+          <div id="raw-packet-display">
+            <span id="tel-raw">Awaiting telemetry...</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Status / Fault Monitor Panel ── -->
+    <section class="gcs-panel" id="status-panel">
+      <div class="panel-header">
+        <span class="panel-title">FAULT MONITOR</span>
+        <span class="panel-tag">ERR-SYS</span>
+      </div>
+
+      <!-- Error Code Display -->
+      <div id="error-code-section">
+        <div class="section-label">4-DIGIT ERROR CODE</div>
+        <div id="err-digit-row">
+          <div class="err-digit-box" id="err-d1">
+            <span class="err-label-top">D.RATE</span>
+            <span class="err-digit" id="err-digit-1">0</span>
+            <span class="err-label-bot">NOMINAL</span>
+          </div>
+          <div class="err-digit-box" id="err-d2">
+            <span class="err-label-top">GPS</span>
+            <span class="err-digit" id="err-digit-2">0</span>
+            <span class="err-label-bot">AVAIL</span>
+          </div>
+          <div class="err-digit-box" id="err-d3">
+            <span class="err-label-top">PAYLOAD</span>
+            <span class="err-digit" id="err-digit-3">0</span>
+            <span class="err-label-bot">OK</span>
+          </div>
+          <div class="err-digit-box" id="err-d4">
+            <span class="err-label-top">CHUTE</span>
+            <span class="err-digit" id="err-digit-4">0</span>
+            <span class="err-label-bot">INACTIVE</span>
+          </div>
+        </div>
+
+        <div id="err-code-full-row">
+          <span class="err-full-label">CODE:</span>
+          <span id="err-code-value" class="err-code-display">0000</span>
+        </div>
+
+        <div id="err-descriptions">
+          <div class="err-desc-item ok" id="err-desc-1">
+            <span class="err-desc-icon">✓</span> DESCENT RATE: NOMINAL (within 8–10 m/s)
+          </div>
+          <div class="err-desc-item ok" id="err-desc-2">
+            <span class="err-desc-icon">✓</span> GPS DATA: AVAILABLE
+          </div>
+          <div class="err-desc-item ok" id="err-desc-3">
+            <span class="err-desc-icon">✓</span> PAYLOAD SEP: --
+          </div>
+          <div class="err-desc-item ok" id="err-desc-4">
+            <span class="err-desc-icon">✓</span> PARACHUTE: INACTIVE
+          </div>
+        </div>
+
+        <div id="overall-status-bar" class="ov-nominal">
+          <span id="ov-icon">■</span>
+          <span id="ov-text">ALL SYSTEMS NOMINAL</span>
+        </div>
+      </div>
+
+      <!-- Mission Log -->
+      <div id="mission-log-section">
+        <div class="section-label">MISSION EVENT LOG</div>
+        <div id="mission-log" role="log" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ┌─────────────────────────────────────────────────────────────┐ -->
+  <!-- │  4. REAL-TIME GRAPHS (5 charts)                             │ -->
+  <!-- └─────────────────────────────────────────────────────────────┘ -->
+  <div id="graphs-section">
+    <div class="chart-panel" id="cp-altitude">
+      <div class="chart-header">
+        <span class="chart-title">ALTITUDE</span>
+        <span class="chart-unit">m</span>
+        <span id="chart-cur-altitude" class="chart-current">-- m</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="chart-altitude"></canvas></div>
+    </div>
+
+    <div class="chart-panel" id="cp-pressure">
+      <div class="chart-header">
+        <span class="chart-title">PRESSURE</span>
+        <span class="chart-unit">kPa</span>
+        <span id="chart-cur-pressure" class="chart-current">-- kPa</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="chart-pressure"></canvas></div>
+    </div>
+
+    <div class="chart-panel" id="cp-temperature">
+      <div class="chart-header">
+        <span class="chart-title">TEMPERATURE</span>
+        <span class="chart-unit">°C</span>
+        <span id="chart-cur-temperature" class="chart-current">-- °C</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="chart-temperature"></canvas></div>
+    </div>
+
+    <div class="chart-panel" id="cp-descent">
+      <div class="chart-header">
+        <span class="chart-title">DESCENT RATE</span>
+        <span class="chart-unit">m/s</span>
+        <span id="chart-cur-descent" class="chart-current">-- m/s</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="chart-descent"></canvas></div>
+    </div>
+
+    <div class="chart-panel" id="cp-voltage">
+      <div class="chart-header">
+        <span class="chart-title">VOLTAGE</span>
+        <span class="chart-unit">V</span>
+        <span id="chart-cur-voltage" class="chart-current">-- V</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="chart-voltage"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ┌─────────────────────────────────────────────────────────────┐ -->
+  <!-- │  5. VISUALIZATION SECTION (Map | Orientation | Video)       │ -->
+  <!-- └─────────────────────────────────────────────────────────────┘ -->
+  <div id="viz-section">
+
+    <!-- GPS Tracking Map -->
+    <div class="gcs-panel" id="map-panel">
+      <div class="panel-header">
+        <span class="panel-title">GPS TRACKING MAP</span>
+        <span class="panel-tag">LEAFLET + OSM</span>
+      </div>
+      <div id="tracking-map"></div>
+      <div id="map-footer">
+        <span>LAT: <span id="map-lat" class="mono-val">--</span></span>
+        <span>LON: <span id="map-lon" class="mono-val">--</span></span>
+        <span>ALT: <span id="map-alt" class="mono-val">-- m</span></span>
+        <span>TRACK: <span id="map-points" class="mono-val">0</span> pts</span>
+      </div>
+    </div>
+
+    <!-- 3D Orientation + Artificial Horizon -->
+    <div class="gcs-panel" id="orientation-panel">
+      <div class="panel-header">
+        <span class="panel-title">ORIENTATION</span>
+        <span class="panel-tag">IMU 3D</span>
+      </div>
+      <canvas id="orientation-3d" width="290" height="200"></canvas>
+      <div id="horizon-row">
+        <div id="horizon-wrap">
+          <canvas id="horizon-canvas" width="130" height="130"></canvas>
+          <span class="canvas-label">ARTIFICIAL HORIZON</span>
+        </div>
+        <div id="rpy-values">
+          <div class="rpy-field">
+            <label>ROLL</label>
+            <span id="disp-roll" class="rpy-val">0.0°</span>
+          </div>
+          <div class="rpy-field">
+            <label>PITCH</label>
+            <span id="disp-pitch" class="rpy-val">0.0°</span>
+          </div>
+          <div class="rpy-field">
+            <label>YAW</label>
+            <span id="disp-yaw" class="rpy-val">0.0°</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Subsystem Status / Video Feed -->
+    <div class="gcs-panel" id="subsystem-panel">
+      <div class="panel-header">
+        <span class="panel-title">SUBSYSTEM STATUS</span>
+        <span class="panel-tag">SYS-HEALTH</span>
+      </div>
+
+      <div id="subsystem-grid">
+        <div class="sub-item" id="sub-power">
+          <span class="sub-icon">⚡</span>
+          <span class="sub-label">POWER</span>
+          <span id="sub-power-status" class="sub-badge offline">OFFLINE</span>
+        </div>
+        <div class="sub-item" id="sub-comms">
+          <span class="sub-icon">📡</span>
+          <span class="sub-label">COMMS LINK</span>
+          <span id="sub-comms-status" class="sub-badge offline">OFFLINE</span>
+        </div>
+        <div class="sub-item" id="sub-gps">
+          <span class="sub-icon">◎</span>
+          <span class="sub-label">GPS LOCK</span>
+          <span id="sub-gps-status" class="sub-badge offline">NO FIX</span>
+        </div>
+        <div class="sub-item" id="sub-imu">
+          <span class="sub-icon">◈</span>
+          <span class="sub-label">IMU</span>
+          <span id="sub-imu-status" class="sub-badge offline">OFFLINE</span>
+        </div>
+        <div class="sub-item" id="sub-payload">
+          <span class="sub-icon">▣</span>
+          <span class="sub-label">PAYLOAD LINK</span>
+          <span id="sub-payload-status" class="sub-badge offline">OFFLINE</span>
+        </div>
+        <div class="sub-item" id="sub-chute">
+          <span class="sub-icon">⛆</span>
+          <span class="sub-label">PARACHUTE</span>
+          <span id="sub-chute-status" class="sub-badge offline">STOWED</span>
+        </div>
+      </div>
+
+      <div class="section-label">SIMULATION CONTROL</div>
+      <div id="sim-controls">
+        <label class="sim-toggle">
+          <input type="checkbox" id="sim-mode-toggle" />
+          <span>SIMULATION MODE</span>
+        </label>
+        <div class="sim-row">
+          <label for="sim-pressure-input">SIM PRESSURE (Pa)</label>
+          <input type="number" id="sim-pressure-input" class="sim-input" placeholder="101325" />
+          <button id="btn-sim-enable" class="btn-ctrl btn-util">ENABLE SIM</button>
+          <button id="btn-sim-activate" class="btn-ctrl btn-util">ACTIVATE</button>
+          <button id="btn-sim-disable" class="btn-ctrl btn-util">DISABLE SIM</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ┌─────────────────────────────────────────────────────────────┐ -->
+  <!-- │  6. FOOTER                                                  │ -->
+  <!-- └─────────────────────────────────────────────────────────────┘ -->
+  <footer id="gcs-footer">
+    <span>INDIA SPACE LAB — CANSAT GROUND CONTROL SOFTWARE</span>
+    <span id="footer-version">BUILD v1.0.0</span>
+    <span id="footer-conn-summary">
+      LINK: <span id="footer-link-state" class="mono-val">OFFLINE</span>
+    </span>
+  </footer>
+
+</div><!-- /#gcs-app -->
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  EXTERNAL LIBRARIES                                              -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  GCS APPLICATION MODULES (load order matters — utils/config      -->
+<!--  first, app.js last since it wires everything together)         -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<script src="js/utils.js"></script>
+<script src="js/config.js"></script>
+<script src="js/errors.js"></script>
+<script src="js/logger.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/map.js"></script>
+<script src="js/orientation.js"></script>
+<script src="js/serial.js"></script>
+<script src="js/simulator.js"></script>
+<script src="js/commands.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
